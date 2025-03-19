@@ -94,7 +94,7 @@ try:
             client.close()
             client = connect_client()
 
-        time.sleep(5)
+        time.sleep(10)
 
 except KeyboardInterrupt:
     print("🛑 Dừng client.")
