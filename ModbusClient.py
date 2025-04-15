@@ -1,44 +1,62 @@
 import time
 import requests
-from pymodbus.client import ModbusTcpClient
 from datetime import datetime
-from supabase import create_client, Client
+from pymodbus.client import ModbusTcpClient
+import threading
 
-# Thông tin Modbus Server
-SERVER_IP = "192.168.1.11"
+# Cấu hình chung
 PORT = 502
-ADDRESS = 0  # Địa chỉ bắt đầu đọc
-COUNT = 8  # Số thanh ghi cần đọc
+ADDRESS = 0
+COUNT = 8
 
-# Thông tin Supabase
-SUPABASE_URL = "https://aliuuqjtebclmkvjuvuv.supabase.co"
-SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFsaXV1cWp0ZWJjbG1rdmp1dnV2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDE1ODc0MzEsImV4cCI6MjA1NzE2MzQzMX0.plInkKJO8d8u-NQgzkyXxvU9FcnESWe6Cuk0Ec8PUcI"
-supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+# Cấu hình server và API endpoints
+CONFIG = {
+    "client1": {
+        "server_ip": "192.168.2.10",
+        "api_endpoints": [
+            "http://192.168.10.87:8080/api/g1",
+            "http://192.168.10.87:8081/api/v1/mPnKodsGI66fyM8fBDNV/telemetry"
+        ]
+    },
+    "client2": {
+        "server_ip": "192.168.2.11",
+        "api_endpoints": [
+            "http://192.168.10.87:8080/api/g2",
+            "http://192.168.10.87:8081/api/v1/CZTxzFBMcdV8wnZ8Lqsi/telemetry"
+        ]
+    },
+    "client3": {
+        "server_ip": "192.168.2.12",
+        "api_endpoints": [
+            "http://192.168.10.87:8080/api/g3",
+            "http://192.168.10.87:8081/api/v1/hwm2dsgx8lkin2vv8c1s/telemetry"
+        ]
+    }
+}
 
-# Danh sách API cần gửi dữ liệu
-API_ENDPOINTS = [
-    "http://192.168.10.87:8080/api/t4",
-    "http://192.168.10.87:8081/api/v1/rIlIYYm0rizWGqkrhuQY/telemetry"
-]
-def connect_client():
-    """Tự động kết nối lại nếu mất kết nối"""
+def connect_modbus_client(server_ip, client_name):
+    """Kết nối đến Modbus TCP Server"""
     while True:
         try:
-            client = ModbusTcpClient(SERVER_IP, port=PORT)
+            client = ModbusTcpClient(server_ip, port=PORT)
             if client.connect():
-                print("✅ Kết nối Modbus Server thành công!")
+                print(f"✅ [{client_name}] Đã kết nối Modbus thành công.")
                 return client
             else:
-                print("❌ Không thể kết nối, thử lại sau 5 giây...")
+                print(f"❌ [{client_name}] Kết nối thất bại. Thử lại sau 5 giây...")
         except Exception as e:
-            print(f"⚠ Lỗi kết nối: {e}")
+            print(f"⚠ [{client_name}] Lỗi kết nối Modbus: {e}")
         time.sleep(5)
 
-def save_to_supabase(temperatures):
-    """Lưu dữ liệu vào Supabase"""
+def convert_registers_to_temperatures(registers):
+    """Chuyển giá trị thanh ghi thành nhiệt độ thực tế"""
+    return [reg / 10 for reg in registers]
+
+def send_to_api(temperatures, api_endpoints, client_name):
+    """Gửi dữ liệu nhiệt độ đến các API"""
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-    data = {
+    payload = {
         "timestamp": timestamp,
         "sensor1_temperature": temperatures[0],
         "sensor2_temperature": temperatures[1],
@@ -49,108 +67,72 @@ def save_to_supabase(temperatures):
         "sensor7_temperature": temperatures[6],
         "sensor8_temperature": temperatures[7],
     }
-
-    response = supabase.table("t4").insert(data).execute()
-
-    if response.get("error"):
-        print(f"❌ Lỗi khi lưu vào Supabase: {response['error']['message']}")
-    else:
-        print(f"✅ Dữ liệu đã lưu vào Supabase: {timestamp} {temperatures}")
-
-# def send_to_api(temperatures):
-#     """Gửi dữ liệu đến API"""
-#     timestamp = datetime.now().isoformat()
-#
-#     payload = {
-#         "timestamp": timestamp,
-#         "sensor1": temperatures[0],
-#         "sensor2": temperatures[1],
-#         "sensor3": temperatures[2],
-#         "sensor4": temperatures[3],
-#         "sensor5": temperatures[4],
-#         "sensor6": temperatures[5],
-#         "sensor7": temperatures[6],
-#         "sensor8": temperatures[7],
-#     }
-#
-#     for url in API_ENDPOINTS:
-#         try:
-#             response = requests.post(url, json=payload, timeout=5)
-#             if response.status_code == 200:
-#                 print(f"✅ Gửi dữ liệu thành công đến {url}")
-#             else:
-#                 print(f"⚠ Lỗi gửi dữ liệu đến {url}: {response.status_code} - {response.text}")
-#         except requests.exceptions.RequestException as e:
-#             print(f"❌ Lỗi kết nối API {url}: {e}")
-def send_to_api(temperatures):
-    """ Gửi dữ liệu lên cả hai API """
-    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
-    data = {
-        "timestamp": timestamp,
-        "sensor1_temperature": temperatures[0],
-        "sensor2_temperature": temperatures[1],
-        "sensor3_temperature": temperatures[2],
-        "sensor4_temperature": temperatures[3],
-        "sensor5_temperature": temperatures[4],
-        "sensor6_temperature": temperatures[5],
-        "sensor7_temperature": temperatures[6],
-        "sensor8_temperature": temperatures[7],
-    }
-
-    api_endpoints = [
-        "http://192.168.10.87:8080/api/t4",
-        "http://192.168.10.87:8081/api/v1/rIlIYYm0rizWGqkrhuQY/telemetry"
-    ]
 
     for url in api_endpoints:
         try:
-            response = requests.post(url, json=data, timeout=5)
-
+            response = requests.post(url, json=payload, timeout=5)
             if response.status_code in [200, 201]:
-                print(f"✅ Dữ liệu đã gửi thành công lên {url}")
+                print(f"✅ [{client_name}] Gửi thành công đến {url}")
             else:
-                print(f"⚠ Cảnh báo: API {url} trả về mã {response.status_code}: {response.text}")
-
+                print(f"⚠ [{client_name}] API {url} trả về mã {response.status_code}: {response.text}")
         except Exception as e:
-            print(f"❌ Lỗi khi gửi dữ liệu lên {url}: {e}")
-def convert_registers_to_temperatures(registers):
-    """Chuyển đổi dữ liệu Modbus thành nhiệt độ thực tế"""
-    return [reg / 10 for reg in registers]  # Chia 10 để lấy giá trị thực
+            print(f"❌ [{client_name}] Lỗi khi gửi đến {url}: {e}")
 
-# Kết nối Modbus
-client = connect_client()
+def main_loop(server_ip, api_endpoints, client_name):
+    """Vòng lặp chính cho mỗi client"""
+    client = connect_modbus_client(server_ip, client_name)
 
-try:
-    while True:
-        try:
-            if not client.is_socket_open():
-                print("⚠ Mất kết nối! Đang thử kết nối lại...")
+    try:
+        while True:
+            try:
+                if not client.is_socket_open():
+                    print(f"⚠ [{client_name}] Mất kết nối. Đang thử lại...")
+                    client.close()
+                    client = connect_modbus_client(server_ip, client_name)
+
+                response = client.read_input_registers(address=ADDRESS, count=COUNT)
+
+                if response.isError():
+                    print(f"❌ [{client_name}] Lỗi đọc thanh ghi: {response}")
+                else:
+                    registers = response.registers
+                    temperatures = convert_registers_to_temperatures(registers)
+                    print(f"✅ [{client_name}] Nhiệt độ đọc được: {temperatures}")
+                    # send_to_api(temperatures, api_endpoints, client_name)
+                    if client_name == "client3":
+                        # Lấy giá trị trung bình của 7 cảm biến còn lại (bỏ qua index 1)
+                        valid_values = [temp for i, temp in enumerate(temperatures) if i != 1]
+                        average = sum(valid_values) / len(valid_values)
+                        temperatures[1] = round(average, 1)  # Làm tròn 1 chữ số thập phân
+                        print(f"⚠ [{client_name}] Thay thế sensor2_temperature bằng trung bình: {temperatures[1]}")
+
+                    send_to_api(temperatures, api_endpoints, client_name)
+
+            except Exception as e:
+                print(f"❌ [{client_name}] Lỗi trong quá trình đọc/gửi: {e}")
                 client.close()
-                client = connect_client()
+                client = connect_modbus_client(server_ip, client_name)
 
-            response = client.read_input_registers(address=ADDRESS, count=COUNT)
+            time.sleep(10)
 
-            if response.isError():
-                print(f"❌ Lỗi khi đọc dữ liệu! {response}")
-            else:
-                registers = response.registers
-                temperatures = convert_registers_to_temperatures(registers)
-                print(f"✅ Dữ liệu nhận được: {temperatures}")
-                # Gửi lên các API
-                send_to_api(temperatures)
-                # Lưu vào Supabase
-                save_to_supabase(temperatures)
+    except KeyboardInterrupt:
+        print(f"🛑 [{client_name}] Dừng chương trình.")
+    finally:
+        client.close()
 
+if __name__ == "__main__":
+    # Tạo danh sách các luồng
+    threads = []
 
-        except Exception as e:
-            print(f"❌ Lỗi khi đọc dữ liệu: {e}")
-            client.close()
-            client = connect_client()
+    # Tạo luồng cho từng client
+    for client_name, config in CONFIG.items():
+        thread = threading.Thread(
+            target=main_loop,
+            args=(config["server_ip"], config["api_endpoints"], client_name)
+        )
+        threads.append(thread)
+        thread.start()
 
-        time.sleep(10)
-
-except KeyboardInterrupt:
-    print("🛑 Dừng client.")
-finally:
-    client.close()
+    # Chờ tất cả các luồng kết thúc (trong trường hợp này là khi người dùng nhấn Ctrl+C)
+    for thread in threads:
+        thread.join()
